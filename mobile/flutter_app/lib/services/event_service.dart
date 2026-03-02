@@ -3,10 +3,10 @@ import 'package:http/http.dart' as http;
 import '../models/event.dart';
 
 class EventService {
-  static const String baseUrl =
-      'http://localhost:3000'; // Backend URL, ama frontend sadece, mock kullan
+  // Use a host like '192.168.0.100' or pass the actual device IP when calling fetchEvents
+  // Endpoint: http://<host>:3000/api/events
 
-  // Mock data for now
+  // Mock data for now (fallback)
   static List<Event> getMockEvents() {
     return [
       Event(
@@ -50,17 +50,20 @@ class EventService {
     ];
   }
 
-  // Future<List<Event>> fetchEvents() async {
-  //   final response = await http.get(Uri.parse('$baseUrl/events'));
-  //   if (response.statusCode == 200) {
-  //     List<dynamic> data = json.decode(response.body);
-  //     return data.map((json) => Event.fromJson(json)).toList();
-  //   } else {
-  //     throw Exception('Failed to load events');
-  //   }
-  // }
-
-  List<Event> fetchEvents() {
-    return getMockEvents();
+  Future<List<Event>> fetchEvents({String host = '192.168.0.100'}) async {
+    final uri = Uri.parse('http://$host:3000/api/events');
+    try {
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        return data.map((json) => Event.fromJson(json)).toList();
+      } else {
+        // If backend returns error, fall back to mock data
+        return getMockEvents();
+      }
+    } catch (e) {
+      // On exception (timeout, network), return mock data as fallback
+      return getMockEvents();
+    }
   }
 }

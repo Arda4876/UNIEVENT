@@ -64,20 +64,30 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class HomeContent extends StatelessWidget {
+class HomeContent extends StatefulWidget {
   const HomeContent({super.key});
+
+  @override
+  _HomeContentState createState() => _HomeContentState();
+}
+
+class _HomeContentState extends State<HomeContent> {
+  late Future<void> _loadFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    final provider = Provider.of<EventProvider>(context, listen: false);
+    _loadFuture = provider.loadEvents();
+  }
 
   @override
   Widget build(BuildContext context) {
     final eventProvider = Provider.of<EventProvider>(context);
-    eventProvider.loadEvents();
 
     // Mock user preferences
     String userCity = 'İstanbul';
     List<String> userInterests = ['Seminer', 'Konferans'];
-
-    List<Event> personalizedEvents =
-        eventProvider.getPersonalizedEvents(userCity, userInterests);
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -90,10 +100,32 @@ class HomeContent extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Expanded(
-            child: ListView.builder(
-              itemCount: personalizedEvents.length,
-              itemBuilder: (context, index) {
-                return EventCard(event: personalizedEvents[index]);
+            child: FutureBuilder<void>(
+              future: _loadFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting ||
+                    eventProvider.isLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (eventProvider.error != null) {
+                  return Center(child: Text('Hata: ${eventProvider.error}'));
+                }
+
+                List<Event> personalizedEvents = eventProvider
+                    .getPersonalizedEvents(userCity, userInterests);
+
+                if (personalizedEvents.isEmpty) {
+                  return const Center(
+                      child: Text('Gösterilecek etkinlik yok.'));
+                }
+
+                return ListView.builder(
+                  itemCount: personalizedEvents.length,
+                  itemBuilder: (context, index) {
+                    return EventCard(event: personalizedEvents[index]);
+                  },
+                );
               },
             ),
           ),
