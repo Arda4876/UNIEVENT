@@ -18,7 +18,7 @@ admin.initializeApp({
 const db = admin.firestore();
 
 app.get("/", (req, res) => {
-  res.send("UNIEVENT Backend çalisiyorr");
+  res.send("UNIEVENT Backend çalışıyor");
 });
 
 app.get("/api/events", async (req, res) => {
