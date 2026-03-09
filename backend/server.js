@@ -24,14 +24,24 @@ app.get("/", (req, res) => {
 
 app.get("/api/events", async (req, res) => {
   try {
+    const searchQuery = req.query.search;
+
     const snapshot = await db.collection("events").get();
 
-    const data = snapshot.docs.map((doc) => ({
+    let events = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
 
-    res.json(data);
+    if (searchQuery) {
+      const searchLower = searchQuery.toLowerCase();
+
+      events = events.filter((event) =>
+        event.title.toLowerCase().includes(searchLower)
+      );
+    }
+
+    res.json(events);
   } catch (error) {
     console.error("Error fetching events:", error);
     res.status(500).json({ error: "Hata oluştu" });
