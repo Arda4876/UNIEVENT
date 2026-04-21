@@ -1,22 +1,20 @@
 const express = require("express");
 const cors = require("cors");
 const admin = require("firebase-admin");
-const bcrypt = require("bcryptjs");
-const { body, validationResult } = require("express-validator"); // Girdi doğrulaması eklendi
+const bcrypt = require("bcrypt"); // Orijinal bcrypt kütüphanesine geri dönüldü
+const { body, validationResult } = require("express-validator");
 
 const app = express();
 
-// --- GÜVENLİK 1: CORS POLİTİKASI SIKILAŞTIRILDI ---
-// Sadece bu listedeki sitelerin API'ye istek atmasına izin verilir.
+// --- GÜVENLİK 1: CORS POLİTİKASI ---
 const allowedOrigins = [
-  "http://localhost:3000", // React/Vue/Next.js lokal geliştirme adresi
-  "http://localhost:5173", // Vite lokal geliştirme adresi
-  "https://senin-frontend-siten.com" // İleride frontend'i canlıya aldığında buraya ekleyeceksin
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "https://senin-frontend-siten.com" // İleride eklenecek
 ];
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // origin yoksa (Postman/Thunder Client gibi araçlar) veya listede varsa izin ver
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -48,18 +46,31 @@ app.get("/", (req, res) => {
 });
 
 // --- ETKİNLİK (EVENTS) UÇLARI ---
+
+// 1. Tüm etkinlikleri getir, filtrele veya isme göre ara
 app.get("/api/events", async (req, res) => {
   try {
-    const searchQuery = req.query.search;
-    const snapshot = await db.collection("events").get();
+    const { search, category, city } = req.query;
+    let eventsRef = db.collection("events");
+
+    // Firebase Seviyesinde Filtreleme
+    if (category) {
+      eventsRef = eventsRef.where("category", "==", category);
+    }
+    if (city) {
+      eventsRef = eventsRef.where("city", "==", city);
+    }
+
+    const snapshot = await eventsRef.get();
 
     let events = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
 
-    if (searchQuery) {
-      const searchLower = searchQuery.toLowerCase();
+    // Node.js Seviyesinde İsim Arama (Search)
+    if (search) {
+      const searchLower = search.toLowerCase();
       events = events.filter((event) =>
         event.title.toLowerCase().includes(searchLower)
       );
@@ -68,10 +79,11 @@ app.get("/api/events", async (req, res) => {
     res.json(events);
   } catch (error) {
     console.error("Error fetching events:", error);
-    res.status(500).json({ error: "Hata oluştu" });
+    res.status(500).json({ error: "Etkinlikler getirilirken hata oluştu" });
   }
 });
 
+// 2. Sadece belirli bir etkinliğin detaylarını getir
 app.get("/api/events/:id", async (req, res) => {
   try {
     const eventId = req.params.id;
@@ -95,7 +107,7 @@ app.get("/api/events/:id", async (req, res) => {
 
 // --- AUTH (KAYIT VE GİRİŞ) UÇLARI ---
 
-// GÜVENLİK 2: KAYIT İÇİN GİRDİ DOĞRULAMA (INPUT VALIDATION)
+// GÜVENLİK 2: KAYIT İÇİN GİRDİ DOĞRULAMA
 const registerValidation = [
   body("name")
     .trim()
@@ -110,9 +122,9 @@ const registerValidation = [
     .matches(/\d/).withMessage("Şifre en az bir rakam içermelidir.")
 ];
 
+// 1. KAYIT OL (Register)
 app.post("/api/auth/register", registerValidation, async (req, res) => {
   try {
-    // Doğrulama hatalarını kontrol et
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
@@ -145,15 +157,15 @@ app.post("/api/auth/register", registerValidation, async (req, res) => {
   }
 });
 
-// GÜVENLİK 2: GİRİŞ İÇİN GİRDİ DOĞRULAMA (INPUT VALIDATION)
+// GÜVENLİK 2: GİRİŞ İÇİN GİRDİ DOĞRULAMA
 const loginValidation = [
   body("email").isEmail().withMessage("Geçerli bir e-posta adresi giriniz.").normalizeEmail(),
   body("password").notEmpty().withMessage("Şifre alanı boş bırakılamaz.")
 ];
 
+// 2. GİRİŞ YAP (Login)
 app.post("/api/auth/login", loginValidation, async (req, res) => {
   try {
-    // Doğrulama hatalarını kontrol et
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
