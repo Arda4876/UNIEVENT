@@ -1,20 +1,41 @@
 const express = require("express");
 const cors = require("cors");
 const admin = require("firebase-admin");
-const bcrypt = require("bcrypt"); // Şifreleme için eklendi
+const bcrypt = require("bcryptjs");
+const { body, validationResult } = require("express-validator"); // Girdi doğrulaması eklendi
 
 const app = express();
 
-app.use(cors());
+// --- GÜVENLİK 1: CORS POLİTİKASI SIKILAŞTIRILDI ---
+// Sadece bu listedeki sitelerin API'ye istek atmasına izin verilir.
+const allowedOrigins = [
+  "http://localhost:3000", // React/Vue/Next.js lokal geliştirme adresi
+  "http://localhost:5173", // Vite lokal geliştirme adresi
+  "https://senin-frontend-siten.com" // İleride frontend'i canlıya aldığında buraya ekleyeceksin
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // origin yoksa (Postman/Thunder Client gibi araçlar) veya listede varsa izin ver
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS policy violation: Bu adresten istek atılamaz."));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
-// Firebase Yetkilendirme Kontrolü
+// --- FIREBASE BAŞLATMA ---
 if (!process.env.FIREBASE_KEY) {
   console.error("FIREBASE_KEY environment variable is missing.");
   process.exit(1);
 }
 
-// Firebase Başlatma
 admin.initializeApp({
   credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_KEY)),
 });
@@ -27,8 +48,6 @@ app.get("/", (req, res) => {
 });
 
 // --- ETKİNLİK (EVENTS) UÇLARI ---
-
-// 1. Tüm etkinlikleri getir veya isme göre ara
 app.get("/api/events", async (req, res) => {
   try {
     const searchQuery = req.query.search;
@@ -39,7 +58,6 @@ app.get("/api/events", async (req, res) => {
       ...doc.data(),
     }));
 
-    // Arama (Search) Altyapısı
     if (searchQuery) {
       const searchLower = searchQuery.toLowerCase();
       events = events.filter((event) =>
@@ -54,7 +72,6 @@ app.get("/api/events", async (req, res) => {
   }
 });
 
-// 2. Sadece belirli bir etkinliğin detaylarını getir
 app.get("/api/events/:id", async (req, res) => {
   try {
     const eventId = req.params.id;
@@ -78,15 +95,30 @@ app.get("/api/events/:id", async (req, res) => {
 
 // --- AUTH (KAYIT VE GİRİŞ) UÇLARI ---
 
-// 1. KAYIT OL (Register) API'si
-app.post("/api/auth/register", async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
+// GÜVENLİK 2: KAYIT İÇİN GİRDİ DOĞRULAMA (INPUT VALIDATION)
+const registerValidation = [
+  body("name")
+    .trim()
+    .notEmpty().withMessage("İsim alanı boş bırakılamaz.")
+    .isLength({ min: 2 }).withMessage("İsim en az 2 karakter olmalıdır."),
+  body("email")
+    .trim()
+    .isEmail().withMessage("Geçerli bir e-posta adresi giriniz.")
+    .normalizeEmail(),
+  body("password")
+    .isLength({ min: 6 }).withMessage("Şifre en az 6 karakter olmalıdır.")
+    .matches(/\d/).withMessage("Şifre en az bir rakam içermelidir.")
+];
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: "Lütfen ad, e-posta ve şifre alanlarını doldurun." });
+app.post("/api/auth/register", registerValidation, async (req, res) => {
+  try {
+    // Doğrulama hatalarını kontrol et
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
     }
 
+    const { name, email, password } = req.body;
     const usersRef = db.collection("users");
     const snapshot = await usersRef.where("email", "==", email).get();
 
@@ -94,7 +126,6 @@ app.post("/api/auth/register", async (req, res) => {
       return res.status(400).json({ error: "Bu e-posta adresi zaten kullanımda." });
     }
 
-    // Şifreyi güvenli hale getir
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
@@ -114,15 +145,21 @@ app.post("/api/auth/register", async (req, res) => {
   }
 });
 
-// 2. GİRİŞ YAP (Login) API'si
-app.post("/api/auth/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
+// GÜVENLİK 2: GİRİŞ İÇİN GİRDİ DOĞRULAMA (INPUT VALIDATION)
+const loginValidation = [
+  body("email").isEmail().withMessage("Geçerli bir e-posta adresi giriniz.").normalizeEmail(),
+  body("password").notEmpty().withMessage("Şifre alanı boş bırakılamaz.")
+];
 
-    if (!email || !password) {
-      return res.status(400).json({ error: "Lütfen e-posta ve şifrenizi girin." });
+app.post("/api/auth/login", loginValidation, async (req, res) => {
+  try {
+    // Doğrulama hatalarını kontrol et
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
     }
 
+    const { email, password } = req.body;
     const usersRef = db.collection("users");
     const snapshot = await usersRef.where("email", "==", email).get();
 
@@ -137,7 +174,6 @@ app.post("/api/auth/login", async (req, res) => {
       userData = doc.data();
     });
 
-    // Şifre karşılaştırması
     const isPasswordValid = await bcrypt.compare(password, userData.password);
 
     if (!isPasswordValid) {
