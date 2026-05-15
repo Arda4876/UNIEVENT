@@ -1,8 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const admin = require("firebase-admin");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
+const bcrypt = require("bcrypt"); // Orijinal bcrypt
 const { body, validationResult } = require("express-validator");
 
 const app = express();
@@ -184,7 +183,7 @@ app.post("/api/auth/login", loginValidation, async (req, res) => {
     // Gerçek projelerde "super_gizli_anahtar" yerine process.env.JWT_SECRET kullanılır.
     const token = jwt.sign(
       { id: userId, email: userData.email }, 
-      process.env.JWT_SECRET || "super_gizli_anahtar_123", 
+      process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
 
